@@ -3,7 +3,7 @@ name = "ml-project-starter"
 version = "0.1.0"
 description = "Production-grade ML project starter scaffold"
 authors = ["Copilot <copilot@example.com>"]
-package-mode = false
+packages = [{ include = "src" }]
 
 [tool.poetry.dependencies]
 python = ">=3.12,<3.14"
