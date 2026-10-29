@@ -1,4 +1,5 @@
 import os
+from collections.abc import Mapping
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -16,3 +17,11 @@ PREDICTIONS_PATH = ROOT_DIR / "data" / "predictions.json"
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "")
+
+
+def get_supabase_credentials(
+    secrets: Mapping[str, str] | None = None,
+) -> tuple[str, str]:
+    url = SUPABASE_URL or (secrets.get("SUPABASE_URL", "") if secrets is not None else "")
+    key = SUPABASE_KEY or (secrets.get("SUPABASE_KEY", "") if secrets is not None else "")
+    return url, key

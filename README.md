@@ -53,6 +53,15 @@ py -3.13 -m poetry run mlflow ui
 
 Copy `.env.example` to `.env`, then set `SUPABASE_URL` and `SUPABASE_KEY` using your project credentials. Create a `predictions` table with `prediction` and `predicted_at` columns. `predict` writes locally to `data/predictions.json` and uploads the batch when credentials are configured. The dashboard reads from Supabase when credentials are present; otherwise it reads the local JSON file.
 
+For Streamlit Community Cloud, open your app's **Settings → Secrets** and add TOML values:
+
+```toml
+SUPABASE_URL = "https://your-project-ref.supabase.co"
+SUPABASE_KEY = "your-server-side-key"
+```
+
+The dashboard reads these from `st.secrets`. Locally, it continues to use environment variables or the root `.env` file.
+
 Use a least-privilege key appropriate to the deployment environment and do not commit `.env` or credentials.
 
 ## Validation and CI

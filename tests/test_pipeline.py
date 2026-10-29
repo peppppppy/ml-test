@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 from sklearn.linear_model import LogisticRegression
 
-from src import database, main
+from src import database, main, settings
 from src.model import Model, train_with_tracking
 from src.output import format_predictions, save_predictions
 from src.processor import prepare_training_data
@@ -107,6 +107,27 @@ def test_supabase_inserts_prediction_batch(monkeypatch: pytest.MonkeyPatch) -> N
     assert inserted == 2
     assert [row["prediction"] for row in table.inserted] == [1.5, 2.5]
     assert all("T" in str(row["predicted_at"]) for row in table.inserted)
+
+
+def test_supabase_credentials_support_streamlit_secrets_and_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "SUPABASE_URL", "")
+    monkeypatch.setattr(settings, "SUPABASE_KEY", "")
+    secrets = {
+        "SUPABASE_URL": "https://secrets.supabase.co",
+        "SUPABASE_KEY": "secrets-key",
+    }
+
+    assert settings.get_supabase_credentials(secrets) == (
+        "https://secrets.supabase.co",
+        "secrets-key",
+    )
+    assert settings.get_supabase_credentials() == ("", "")
+
+    monkeypatch.setattr(settings, "SUPABASE_URL", "https://env.supabase.co")
+    monkeypatch.setattr(settings, "SUPABASE_KEY", "env-key")
+    assert settings.get_supabase_credentials(secrets) == ("https://env.supabase.co", "env-key")
 
 
 def test_mlflow_tracking_logs_training_run(tmp_path: Path) -> None:

@@ -10,5 +10,6 @@ mlruns/
 .env
 .venv/
 .DS_Store
+.streamlit/secrets.toml
 *.joblib
 data/predictions.json

@@ -17,13 +17,16 @@ def save_predictions_to_supabase(predictions: list[dict[str, object]]) -> int:
     return len(response.data)
 
 
-def load_predictions_from_supabase() -> list[dict[str, object]]:
-    client = _get_client()
+def load_predictions_from_supabase(
+    credentials: tuple[str, str] | None = None,
+) -> list[dict[str, object]]:
+    client = _get_client(credentials)
     response = client.table("predictions").select("*").order("predicted_at", desc=True).execute()
     return response.data
 
 
-def _get_client():
-    if not SUPABASE_URL or not SUPABASE_KEY:
+def _get_client(credentials: tuple[str, str] | None = None):
+    url, key = credentials or (SUPABASE_URL, SUPABASE_KEY)
+    if not url or not key:
         raise ValueError("Supabase credentials not configured.")
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
+    return create_client(url, key)
