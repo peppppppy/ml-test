@@ -1,0 +1,29 @@
+version: 2.1
+
+jobs:
+  test:
+    docker:
+      - image: cimg/python:3.12
+    steps:
+      - checkout
+      - run:
+          name: Install Poetry
+          command: python -m pip install poetry
+      - run:
+          name: Install dependencies
+          command: poetry install --with dev
+      - run:
+          name: Lint
+          command: poetry run ruff check src tests
+      - run:
+          name: Type check
+          command: poetry run mypy src
+      - run:
+          name: Test
+          command: poetry run pytest -q
+
+workflows:
+  version: 2
+  build_and_test:
+    jobs:
+      - test

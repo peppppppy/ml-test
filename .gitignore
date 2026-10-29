@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+mlruns/
+.env
+.venv/
+.DS_Store
+*.joblib
+data/predictions.json
