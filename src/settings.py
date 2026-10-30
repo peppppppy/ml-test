@@ -1,27 +1,43 @@
-import os
-from collections.abc import Mapping
-from pathlib import Path
+"""Configuration — the project's control panel.
 
-from dotenv import load_dotenv
+Anything you'd tweak without touching pipeline logic lives here.
+"""
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(ROOT_DIR / ".env")
+from __future__ import annotations
 
-DATA_PATH = ROOT_DIR / "data" / "train.csv"
-INFERENCE_DATA_PATH = ROOT_DIR / "data" / "inference.csv"
-TARGET_COLUMN = "target"
-FEATURE_COLUMNS: list[str] = []
-MODEL_PATH = ROOT_DIR / "data" / "model.joblib"
-PREDICTIONS_PATH = ROOT_DIR / "data" / "predictions.json"
+# ── Data ──────────────────────────────────────────────────────────────────────
+# Retail source data and generated datasets used by the demo.
+RETAIL_DATA_PATH: str = "data/retail_sales.csv"
+DATA_PATH: str = "data/review_score_train.csv"
+INFERENCE_DATA_PATH: str = "data/review_score_inference.csv"
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
-MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "")
+# ── Features & target ─────────────────────────────────────────────────────────
+TARGET_COLUMN: str = "review_score"
+FEATURE_COLUMNS: list[str] = [
+    "price",
+    "quantity",
+    "category_name",
+    "payment_method",
+    "age",
+]
 
+# ── Train / validation split ──────────────────────────────────────────────────
+TEST_SIZE: float = 0.2
+RANDOM_STATE: int = 42
 
-def get_supabase_credentials(
-    secrets: Mapping[str, str] | None = None,
-) -> tuple[str, str]:
-    url = SUPABASE_URL or (secrets.get("SUPABASE_URL", "") if secrets is not None else "")
-    key = SUPABASE_KEY or (secrets.get("SUPABASE_KEY", "") if secrets is not None else "")
-    return url, key
+# ── MLflow experiment tracking ────────────────────────────────────────────────
+# Set MLFLOW_TRACKING_URI to a remote URI (e.g. "http://mlflow:5000") for a
+# shared server. The default writes runs locally to mlruns/.
+MLFLOW_EXPERIMENT_NAME: str = "ml-project-starter"
+MLFLOW_TRACKING_URI: str = "mlruns"
+
+# ── Storage ───────────────────────────────────────────────────────────────────
+SUPABASE_TABLE_NAME: str = "review_score_predictions"
+SUPABASE_RETAIL_TABLE_NAME: str = "retail_sales"
+LOCAL_FALLBACK_PATH: str = "data/review_score_predictions.json"
+
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+DASHBOARD_TITLE: str = "Online Retail Review Score Dashboard"
+DASHBOARD_SUBTITLE: str = (
+    "Explore retail data and review-score predictions."
+)

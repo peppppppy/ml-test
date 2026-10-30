@@ -1,167 +1,71 @@
+"""Integration tests for main.train() and main.predict().
+
+Mocks at the system boundary (extractor + saved model) so tests are fast and
+offline while still exercising the real preprocessing → model → output → storage
+orchestration.
+"""
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from unittest.mock import patch
 
-import pandas as pd
+import numpy as np
 import pytest
-from sklearn.linear_model import LogisticRegression
 
-from src import database, main, settings
-from src.model import Model, train_with_tracking
-from src.output import format_predictions, save_predictions
-from src.processor import prepare_training_data
-from src.tuning import tune_random_forest
+from src import main, settings
 
 
-def _regression_data() -> tuple[pd.DataFrame, pd.Series]:
-    X = pd.DataFrame(
-        {
-            "numeric": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            "category": ["a", "b", "a", "b", "a", "b"],
-        }
-    )
-    y = pd.Series([2.0, 4.0, 6.0, 8.0, 10.0, 12.0], name="target")
-    return X, y
+def test_train_saves_model_to_disk(regression_df, tmp_path, monkeypatch) -> None:
+    """train() should fit a model and persist it."""
+    saved: list[Path] = []
+
+    def fake_save(self, path=None):
+        dest = path or (tmp_path / "model.joblib")
+        import joblib
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump(self._pipeline, dest)
+        saved.append(dest)
+
+    monkeypatch.setattr(settings, "TARGET_COLUMN", "target")
+    monkeypatch.setattr(settings, "FEATURE_COLUMNS", [])
+
+    from src.model import Model
+    with (
+        patch("src.extractor.load_training_data", return_value=regression_df),
+        patch.object(Model, "save", fake_save),
+    ):
+        main.train()
+
+    assert len(saved) == 1 and saved[0].exists()
 
 
-def test_model_trains_saves_and_loads_mixed_features(tmp_path: Path) -> None:
-    X, y = _regression_data()
-    model = Model()
-
-    metrics = model.fit(X, y)
-    model_path = tmp_path / "nested" / "model.joblib"
-    model.save(model_path)
-
-    loaded_model = Model()
-    loaded_model.load(model_path)
-    predictions = loaded_model.predict(X)
-
-    assert set(metrics) == {"mae", "rmse", "r2"}
-    assert len(predictions) == len(y)
-    assert predictions.tolist() == pytest.approx(y.tolist())
-
-
-def test_model_uses_classifier_for_categorical_target() -> None:
-    X = pd.DataFrame({"value": [0, 1, 2, 3, 4, 5]})
-    y = pd.Series(["low", "low", "low", "high", "high", "high"])
-    model = Model()
-
-    metrics = model.fit(X, y)
-
-    assert isinstance(model.estimator, LogisticRegression)
-    assert set(metrics) == {"accuracy", "f1"}
-    assert model.predict(X).tolist() == y.tolist()
-
-
-def test_prepare_training_data_uses_configured_target() -> None:
-    frame = pd.DataFrame({"feature": [1, 2], "target": [3, 4]})
-
-    X, y = prepare_training_data(frame)
-
-    assert list(X.columns) == ["feature"]
-    assert y.tolist() == [3, 4]
-    assert "target" in frame.columns
-
-
-def test_predictions_are_written_as_json(tmp_path: Path) -> None:
-    path = tmp_path / "predictions.json"
-    predictions = pd.Series(["cat", "dog"])
-
-    save_predictions(predictions, path)
-
-    assert json.loads(path.read_text()) == [
-        {"prediction": "cat"},
-        {"prediction": "dog"},
-    ]
-    assert format_predictions(predictions) == [
-        {"prediction": "cat"},
-        {"prediction": "dog"},
-    ]
-
-
-def test_supabase_inserts_prediction_batch(monkeypatch: pytest.MonkeyPatch) -> None:
-    class FakeTable:
-        def __init__(self) -> None:
-            self.inserted: list[dict[str, object]] = []
-
-        def insert(self, rows: list[dict[str, object]]) -> FakeTable:
-            self.inserted = rows
-            return self
-
-        def execute(self) -> Any:
-            return type("Response", (), {"data": self.inserted})()
-
-    table = FakeTable()
-    monkeypatch.setattr(database, "SUPABASE_URL", "https://example.supabase.co")
-    monkeypatch.setattr(database, "SUPABASE_KEY", "test-key")
-    monkeypatch.setattr(
-        database,
-        "create_client",
-        lambda *_args: type("Client", (), {"table": lambda _self, _name: table})(),
-    )
-
-    inserted = database.save_predictions_to_supabase([{"prediction": 1.5}, {"prediction": 2.5}])
-
-    assert inserted == 2
-    assert [row["prediction"] for row in table.inserted] == [1.5, 2.5]
-    assert all("T" in str(row["predicted_at"]) for row in table.inserted)
-
-
-def test_supabase_credentials_support_streamlit_secrets_and_environment(
-    monkeypatch: pytest.MonkeyPatch,
+def test_predict_stores_one_row_per_input(
+    regression_df, tmp_path, monkeypatch, temp_fallback_path: Path
 ) -> None:
-    monkeypatch.setattr(settings, "SUPABASE_URL", "")
-    monkeypatch.setattr(settings, "SUPABASE_KEY", "")
-    secrets = {
-        "SUPABASE_URL": "https://secrets.supabase.co",
-        "SUPABASE_KEY": "secrets-key",
-    }
+    """predict() should store exactly one prediction per inference row."""
+    model_path = tmp_path / "model.joblib"
+    inference_df = regression_df.drop(columns=["target"]).head(5)
 
-    assert settings.get_supabase_credentials(secrets) == (
-        "https://secrets.supabase.co",
-        "secrets-key",
-    )
-    assert settings.get_supabase_credentials() == ("", "")
+    monkeypatch.setattr(settings, "TARGET_COLUMN", "target")
+    monkeypatch.setattr(settings, "FEATURE_COLUMNS", [])
 
-    monkeypatch.setattr(settings, "SUPABASE_URL", "https://env.supabase.co")
-    monkeypatch.setattr(settings, "SUPABASE_KEY", "env-key")
-    assert settings.get_supabase_credentials(secrets) == ("https://env.supabase.co", "env-key")
+    # First train a model so we have something to load.
+    with (
+        patch("src.extractor.load_training_data", return_value=regression_df),
+        patch("src.model.MODEL_PATH", model_path),
+        patch("src.model.MODEL_DIR", tmp_path),
+    ):
+        main.train()
 
+    with (
+        patch("src.extractor.load_inference_data", return_value=inference_df),
+        patch("src.model.MODEL_PATH", model_path),
+    ):
+        main.predict()
 
-def test_mlflow_tracking_logs_training_run(tmp_path: Path) -> None:
-    X, y = _regression_data()
-    tracking_uri = (tmp_path / "mlruns").as_uri()
-
-    model, metrics = train_with_tracking(X, y, tracking_uri=tracking_uri)
-
-    assert model.pipeline is not None
-    assert metrics["mae"] == pytest.approx(0.0, abs=1e-8)
-    assert list((tmp_path / "mlruns").glob("*/meta.yaml"))
-
-
-def test_optuna_tuning_runs_and_returns_best_parameters() -> None:
-    X, y = _regression_data()
-
-    study = tune_random_forest(X, y, n_trials=2)
-
-    assert study.direction.name == "MINIMIZE"
-    assert set(study.best_params) == {"n_estimators", "max_depth"}
-
-
-def test_cli_train_predict_flow_uses_configured_paths(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    data_dir = tmp_path / "data"
-    monkeypatch.setattr(main, "DATA_PATH", data_dir / "train.csv")
-    monkeypatch.setattr(main, "INFERENCE_DATA_PATH", data_dir / "inference.csv")
-    monkeypatch.setattr(main, "MODEL_PATH", data_dir / "model.joblib")
-    monkeypatch.setattr(main, "PREDICTIONS_PATH", data_dir / "predictions.json")
-    monkeypatch.setattr(main, "MLFLOW_TRACKING_URI", "")
-
-    main.train()
-    main.predict()
-
-    assert (data_dir / "model.joblib").exists()
-    assert len(json.loads((data_dir / "predictions.json").read_text())) == 3
+    rows = json.loads(temp_fallback_path.read_text())
+    assert len(rows) == 5
+    assert all("prediction" in r for r in rows)
+    assert all("predicted_at" in r for r in rows)

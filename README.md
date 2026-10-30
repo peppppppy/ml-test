@@ -1,75 +1,340 @@
 # ML Project Starter
 
-A Python starter project for training a scikit-learn-compatible model, generating predictions, and viewing them in a Streamlit dashboard.
+A production-grade scaffold for any end-to-end machine learning project. Clone it, drop in your data, and you have a working training pipeline, inference pipeline, and live dashboard — without having to wire anything together from scratch.
 
-## Requirements and setup
+This is the starter template that goes with the **Get Hired With the Right Project** workbook. The workbook helps you pick a project worth building. This repo helps you ship it.
 
-Use Python 3.12 or 3.13 and Poetry:
+---
 
-```powershell
-py -3.13 -m pip install poetry
-py -3.13 -m poetry install
+## What you get out of the box
+
+| Concern | Tool | Why it's in here |
+|---|---|---|
+| Python version pinning | **pyenv** | Avoids "works on my machine" — everyone runs the same Python |
+| Dependency management | **Poetry** | Lock-file based, sane defaults, what most ML teams use |
+| ML & data science | **scikit-learn, XGBoost, LightGBM, scipy** | Core libraries for classical ML; swap any estimator in one line |
+| Experiment tracking | **MLflow** | Log params, metrics, and artefacts across runs |
+| Hyperparameter tuning | **optuna** | Plug in when you're ready to tune |
+| Code style | **black** + **ruff** | Auto-formats and lints — no bikeshedding on style |
+| Type checking | **mypy** | Catches a class of bugs before runtime |
+| Testing | **pytest** | Industry standard, friendly syntax |
+| CI on every push | **CircleCI** | Runs lint + type-check + tests automatically |
+| Scheduled pipeline runs | **GitHub Actions** | Runs inference on a schedule without you doing anything |
+| Database | **Supabase** | Postgres + auth + dashboard with a generous free tier |
+| Web dashboard | **Streamlit** + **Plotly** | Build a usable UI in pure Python |
+| Hosting | **Streamlit Community Cloud** | Free, one-click deploy, public URL — no server needed |
+
+You don't need to know every one of these on day one. They're already wired together — you can swap in your model and ignore the rest until you're ready.
+
+---
+
+## The pipeline shape
+
+Two modes, one command each:
+
+```
+  make train
+  ┌───────────┐     ┌───────────┐     ┌───────┐
+  │ extractor │ ──► │ processor │ ──► │ model │ ──► model saved to disk
+  └───────────┘     └───────────┘     └───────┘
+    load_training     preprocess()       fit(X, y)
+    _data()           → (X, y)           → metrics
+
+  make predict
+  ┌───────────┐     ┌───────────┐     ┌───────┐     ┌────────┐     ┌──────────┐
+  │ extractor │ ──► │ processor │ ──► │ model │ ──► │ output │ ──► │ database │
+  └───────────┘     └───────────┘     └───────┘     └────────┘     └──────────┘
+    load_inference    preprocess        predict(X)    format          save to
+    _data()           _features()       → preds       predictions     Supabase
+                      → X                                                 │
+                                                                          ▼
+                                                                 ┌──────────────┐
+                                                                 │  streamlit   │
+                                                                 │  dashboard   │
+                                                                 └──────────────┘
 ```
 
-The project also provides Make targets on systems with `make`:
+Each box is one file under `src/`. `src/main.py` orchestrates both modes and is what runs in production.
 
-```text
-make install-dev
-make train
-make predict
-make tune
-make dashboard
-make lint
-make type-check
-make test
+---
+
+## Quickstart (5 minutes)
+
+### 1. Prerequisites
+
+You'll need [pyenv](https://github.com/pyenv/pyenv#installation) and [Poetry](https://python-poetry.org/docs/#installation). On macOS:
+
+```bash
+brew install pyenv
+pip install poetry
 ```
 
-On Windows, run the equivalent Poetry commands directly:
+On Linux/Windows, follow the linked install guides.
 
-```powershell
-py -3.13 -m poetry run python -m src.main train
-py -3.13 -m poetry run python -m src.main predict
-py -3.13 -m poetry run python -m src.main tune
-py -3.13 -m poetry run streamlit run src/streamlit_app.py
+### 2. Get the code and install dependencies
+
+```bash
+cd ml-project-starter
+pyenv install 3.12.12        # if you don't have it already
+pyenv local 3.12.12          # tells this folder which Python to use
+make install-dev             # creates the virtual env + installs everything
 ```
 
-Training and prediction create a small synthetic example dataset only when the corresponding CSV is missing. Replace `data/train.csv` and `data/inference.csv` with your own data, then set `TARGET_COLUMN` and optionally `FEATURE_COLUMNS` in `src/settings.py`.
+### 3. Run the retail review-score demo
 
-## Optional integrations
+The retail CSV is kept in `data/retail_sales.csv`. The model uses `price`
+(float), `quantity` (integer), `category_name` (categorical string),
+`payment_method` (categorical string), and `age` (integer) to predict
+`review_score` (numeric, 1–5). Prepare the labeled and inference datasets, then
+train and predict:
 
-### MLflow
-
-Set `MLFLOW_TRACKING_URI` in a root `.env` file to opt into experiment logging during `train`. For a local file store, use `file:./mlruns`. To use the helper directly, call `train_with_tracking(X, y)` from `src.model`. Run the UI with:
-
-```powershell
-py -3.13 -m poetry run mlflow ui
+```bash
+python -m src.retail prepare
+python -m src.main train
+python -m src.main predict
+streamlit run src/streamlit_app.py
 ```
 
-### Optuna
+The dashboard runs at http://localhost:8501. Without Supabase credentials, it
+displays the local CSV and predictions JSON.
 
-`tune` runs a Random Forest regression study on a held-out validation split and prints the best parameters and validation MAE. It expects a numeric target. To change the number of trials, call `tune_random_forest(X, y, n_trials=50)` from `src.tuning`.
+---
 
-### Supabase
+## Making it your own
 
-Copy `.env.example` to `.env`, then set `SUPABASE_URL` and `SUPABASE_KEY` using your project credentials. Create a `predictions` table with `prediction` and `predicted_at` columns. `predict` writes locally to `data/predictions.json` and uploads the batch when credentials are configured. The dashboard reads from Supabase when credentials are present; otherwise it reads the local JSON file.
+Four steps. Everything else can stay as-is until you want to change it.
 
-For Streamlit Community Cloud, open your app's **Settings → Secrets** and add TOML values:
+### Step 1 — Prepare your data
 
-```toml
-SUPABASE_URL = "https://your-project-ref.supabase.co"
-SUPABASE_KEY = "your-server-side-key"
+The pipeline expects two CSV files (configured in `settings.py`):
+
+| File | Contains |
+|---|---|
+| `data/train.csv` | Labeled data — features + target column |
+| `data/inference.csv` | Unlabeled data — features only (no target required) |
+
+Any column layout is fine. The only requirement is that your training CSV includes the column named in `settings.TARGET_COLUMN`.
+
+### Step 2 — Configure `settings.py`
+
+Open [`src/settings.py`](src/settings.py) and set:
+
+```python
+DATA_PATH = "data/train.csv"           # path to your labeled training data
+INFERENCE_DATA_PATH = "data/inference.csv"  # path to your inference data
+TARGET_COLUMN = "your_target_column"   # the column the model should predict
+FEATURE_COLUMNS = []                   # [] = use every column except the target
 ```
 
-The dashboard reads these from `st.secrets`. Locally, it continues to use environment variables or the root `.env` file.
+That's the minimum. Everything downstream reads from these settings.
 
-Use a least-privilege key appropriate to the deployment environment and do not commit `.env` or credentials.
+### Step 3 — Plug in your data source (`src/extractor.py`)
 
-## Validation and CI
+If your data lives somewhere other than a CSV (a database, an API, S3, …), replace `_load_csv()` in [`src/extractor.py`](src/extractor.py) with your own fetch logic. The return type just needs to be a `pd.DataFrame` — the rest of the pipeline adapts automatically.
 
-```powershell
-py -3.13 -m poetry run ruff check src tests
-py -3.13 -m poetry run mypy src
-py -3.13 -m poetry run pytest -q
+```python
+# Replace this:
+def _load_csv(path: str) -> pd.DataFrame:
+    return pd.read_csv(path)
+
+# With your own source, e.g.:
+def _load_from_db(query: str) -> pd.DataFrame:
+    engine = sqlalchemy.create_engine(os.environ["DB_URL"])
+    return pd.read_sql(query, engine)
 ```
 
-CircleCI runs lint, type checking, and tests for pushes and pull requests.
+### Step 4 — Swap the model (`src/model.py`)
+
+The default is a scikit-learn `LinearRegression`. To change the algorithm, edit one line in `_build_estimator()`:
+
+```python
+def _build_estimator():
+    return LinearRegression()          # default
+
+    # ── Regression ───────────────────────────────────────────────────
+    # return Ridge(alpha=1.0)
+    # return RandomForestRegressor(n_estimators=100, random_state=42)
+    # return XGBRegressor(n_estimators=100, learning_rate=0.1)
+    # return LGBMRegressor(n_estimators=100, learning_rate=0.1)
+
+    # ── Classification ───────────────────────────────────────────────
+    # return LogisticRegression(max_iter=1000)
+    # return RandomForestClassifier(n_estimators=100, random_state=42)
+    # return XGBClassifier(n_estimators=100, learning_rate=0.1)
+```
+
+The model interface (`fit(X, y)` / `predict(X)`) stays the same regardless of which estimator you use, so the rest of the pipeline just works.
+
+Numeric targets → regression metrics (MAE, RMSE, R²) are logged automatically.
+String/categorical targets → classification metrics (accuracy, F1) are logged automatically.
+
+If you need new packages: `poetry add <package-name>`.
+
+---
+
+## Optional: experiment tracking with MLflow
+
+Switch on experiment tracking by replacing `Model()` with `train_with_tracking()` in `src/main.py`:
+
+```python
+# Instead of:
+model = Model()
+metrics = model.fit(X, y)
+
+# Use:
+from src.model import train_with_tracking
+model, metrics = train_with_tracking(X, y)
+```
+
+Runs are logged to `mlruns/` by default. Open the MLflow UI with:
+
+```bash
+poetry run mlflow ui
+```
+
+To use a remote tracking server, set `MLFLOW_TRACKING_URI` in `settings.py`.
+
+---
+
+## Optional: hyperparameter tuning with Optuna
+
+Optuna is installed and ready to use. Create a study in your training script:
+
+```python
+import optuna
+from sklearn.ensemble import RandomForestRegressor
+
+def objective(trial):
+    n_estimators = trial.suggest_int("n_estimators", 50, 300)
+    max_depth = trial.suggest_int("max_depth", 3, 10)
+    model = RandomForestRegressor(n_estimators=n_estimators, max_depth=max_depth)
+    model.fit(X_train, y_train)
+    return mean_absolute_error(y_val, model.predict(X_val))
+
+study = optuna.create_study(direction="minimize")
+study.optimize(objective, n_trials=50)
+```
+
+---
+
+## Optional: connect Supabase
+
+The dashboard reads retail rows and review-score predictions from Supabase.
+Without credentials it previews the local CSV and JSON files instead.
+
+1. Create a project at [supabase.com](https://supabase.com).
+2. In **SQL Editor**, run [`supabase/schema.sql`](supabase/schema.sql) to create
+   the `retail_sales` and `review_score_predictions` tables. The schema uses
+   the selected numeric and categorical column types.
+3. Copy `.env.example` to `.env` and set `SUPABASE_URL` and `SUPABASE_KEY`.
+   Use the service-role secret only in this private, server-side `.env` or
+   Streamlit server secrets; never put it in browser/client code or commit it.
+4. Install project dependencies, including the Supabase client, then import the
+   1,000 source rows and create review-score predictions:
+
+   ```bash
+   poetry install
+   python -m src.retail import
+   python -m src.retail prepare
+   python -m src.main train
+   python -m src.main predict
+   streamlit run src/streamlit_app.py
+   ```
+
+The import is safe to rerun: `source_row` is a stable primary key and rows are
+upserted. Training uses rows with numeric review scores; inference runs on all
+rows. Review scores are model targets, not return labels.
+
+---
+
+## Optional: set up CircleCI
+
+Adds automatic lint + type-check + test on every push and pull request.
+
+1. Sign up at [circleci.com](https://circleci.com) with your GitHub account.
+2. From your dashboard, click **Set Up Project** next to this repo.
+3. Choose **"Fastest"** and select the `.circleci/config.yml` already in the repo.
+
+To require checks to pass before merging: **GitHub → Settings → Branches → Add rule** for `main`, tick *"Require status checks to pass before merging"*.
+
+---
+
+## Optional: deploy to Streamlit Community Cloud
+
+Gives your app a public `*.streamlit.app` URL. The GitHub repository can be
+public or private: for a private repo, authorize Streamlit Community Cloud to
+access it through GitHub when prompted. A private source repository does not
+make the deployed app private; anyone with the app URL can open it.
+
+1. Push this project to GitHub. Community Cloud installs the dashboard's
+   dependencies from [`requirements.txt`](requirements.txt) and uses Python
+   3.12 as specified by [`.python-version`](.python-version).
+2. Sign in at [share.streamlit.io](https://share.streamlit.io).
+3. Click **New app** and fill in:
+   - **Repository** — your repo
+   - **Branch** — `main`
+   - **Main file path** — `src/streamlit_app.py`
+4. Open **Advanced settings → Secrets** and add the Supabase URL and key in
+   TOML format:
+   ```toml
+   SUPABASE_URL = "https://your-project-ref.supabase.co"
+   SUPABASE_KEY = "your-key"
+   ```
+   For a publicly accessible app, use a Supabase key with only the access your
+   dashboard needs and configure appropriate read-only Row Level Security
+   policies. Never expose a service-role key in a public app. Keep real
+   credentials in Community Cloud Secrets (or a local, untracked
+   `.streamlit/secrets.toml`), not in source files or GitHub.
+5. Click **Deploy**. Check the app at its public `*.streamlit.app` URL.
+
+---
+
+## Common questions
+
+**What kind of ML tasks does this support?**
+Any scikit-learn-compatible task: regression, binary classification, multiclass classification. Swap the estimator in `_build_estimator()` and the metrics update automatically. For clustering or anomaly detection, call the estimator directly rather than through the `Model` wrapper.
+
+**My data has both numeric and categorical columns. Do I need to encode them manually?**
+No. The `Model` uses a `ColumnTransformer` that auto-detects column types: `StandardScaler` for numerics, `OneHotEncoder` for strings. You don't need to preprocess column types yourself.
+
+**Can I use PyTorch or TensorFlow?**
+Yes. Replace the contents of `model.py` with your own training loop. Keep the `fit(X, y)` / `predict(X)` / `save()` / `load()` signatures and `main.py` won't need to change.
+
+**I want to tune hyperparameters. Where do I start?**
+See the [Optuna section](#optional-hyperparameter-tuning-with-optuna) above. Optuna is already installed.
+
+**I want to log experiments. Where do I start?**
+See the [MLflow section](#optional-experiment-tracking-with-mlflow) above. MLflow is already installed.
+
+**My features need domain-specific engineering before training.**
+Add it to `processor.py`. There are two helper stubs already in there — `_add_interaction_terms()` and `_add_date_features()` — showing the pattern. Uncomment and adapt whichever you need.
+
+**How do I add a new dependency?**
+`poetry add <package-name>`. Commit the updated `pyproject.toml` and `poetry.lock`.
+
+**How do I run the demo on Windows?**
+Run `.venv\Scripts\python -m src.retail prepare`, then
+`.venv\Scripts\python -m src.main train` and
+`.venv\Scripts\python -m src.main predict`. Start the dashboard with
+`.venv\Scripts\streamlit run src\streamlit_app.py`.
+
+**The pipeline is slow.**
+Profile with `python -m cProfile -s cumulative -m src.main predict`. The bottleneck is usually model training or data loading. Smaller feature sets, a simpler estimator, or caching your data fetch will usually fix it.
+
+---
+
+## The companion workbook
+
+Picking the right project matters as much as building it well — a great scaffold plus a generic project still gives you a generic result.
+
+The **Get Hired With the Right Project** workbook is the companion to this repo: a short fill-in exercise that helps you land on a project that's genuinely yours. Five things you're interested in, five questions for each, then you narrow down to the one that's exciting and just slightly beyond your current reach.
+
+If you haven't done it yet, start there — then come back here to build.
+
+---
+
+## Getting unstuck
+
+Once you have a project picked and the scaffold cloned, the hard part begins: choosing the right model, figuring out features, evaluating performance honestly, and being able to talk about all of it in a job interview.
+
+That's where most people stall. If you want hands-on coaching to get all the way from "I have a scaffold" to "I landed the job," see [**Code to Careers**](https://coaching.egorhowell.com/) — a 3-6 month programme designed for data professionals who want to dramatically level up their next role.
