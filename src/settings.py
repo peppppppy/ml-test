@@ -5,11 +5,16 @@ Anything you'd tweak without touching pipeline logic lives here.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DATA_DIRECTORY = PROJECT_ROOT / "data"
+
 # ── Data ──────────────────────────────────────────────────────────────────────
 # Retail source data and generated datasets used by the demo.
-RETAIL_DATA_PATH: str = "data/retail_sales.csv"
-DATA_PATH: str = "data/review_score_train.csv"
-INFERENCE_DATA_PATH: str = "data/review_score_inference.csv"
+RETAIL_DATA_PATH: str = str(DATA_DIRECTORY / "retail_sales.csv")
+DATA_PATH: str = str(DATA_DIRECTORY / "review_score_train.csv")
+INFERENCE_DATA_PATH: str = str(DATA_DIRECTORY / "review_score_inference.csv")
 
 # ── Features & target ─────────────────────────────────────────────────────────
 TARGET_COLUMN: str = "review_score"
@@ -34,7 +39,7 @@ MLFLOW_TRACKING_URI: str = "mlruns"
 # ── Storage ───────────────────────────────────────────────────────────────────
 SUPABASE_TABLE_NAME: str = "review_score_predictions"
 SUPABASE_RETAIL_TABLE_NAME: str = "retail_sales"
-LOCAL_FALLBACK_PATH: str = "data/review_score_predictions.json"
+LOCAL_FALLBACK_PATH: str = str(DATA_DIRECTORY / "review_score_predictions.json")
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 DASHBOARD_TITLE: str = "Online Retail Review Score Dashboard"

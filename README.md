@@ -267,8 +267,10 @@ access it through GitHub when prompted. A private source repository does not
 make the deployed app private; anyone with the app URL can open it.
 
 1. Push this project to GitHub. Community Cloud installs the dashboard's
-   dependencies from [`requirements.txt`](requirements.txt) and uses Python
-   3.12 as specified by [`.python-version`](.python-version).
+   dependencies from [`requirements.txt`](requirements.txt). In the app
+   creation form's **Advanced settings**, select Python 3.12; Community Cloud
+   may default to a newer Python version that is incompatible with the pinned
+   PyArrow release.
 2. Sign in at [share.streamlit.io](https://share.streamlit.io).
 3. Click **New app** and fill in:
    - **Repository** — your repo
