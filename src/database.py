@@ -86,18 +86,36 @@ def load_retail_sales(limit: int = 5000) -> list[dict]:
             .limit(limit)
             .execute()
         )
-        return response.data or []
+        rows = response.data or []
+        for row in rows:
+            row.setdefault(settings.RETURN_TARGET_COLUMN, None)
+        return rows
 
     path = Path(settings.RETAIL_DATA_PATH)
     if not path.exists():
         return []
     df = pd.read_csv(path).head(limit).copy()
     df.insert(0, "source_row", range(1, len(df) + 1))
-    df = df.loc[:, ["source_row", *settings.FEATURE_COLUMNS, settings.TARGET_COLUMN]]
+    if settings.RETURN_TARGET_COLUMN not in df.columns:
+        df[settings.RETURN_TARGET_COLUMN] = pd.NA
+    df = df.loc[
+        :,
+        [
+            "source_row",
+            *settings.FEATURE_COLUMNS,
+            settings.TARGET_COLUMN,
+            settings.RETURN_TARGET_COLUMN,
+        ],
+    ]
     df["price"] = pd.to_numeric(df["price"], errors="raise").astype(float)
     df["quantity"] = pd.to_numeric(df["quantity"], errors="raise").astype("int64")
     df["age"] = pd.to_numeric(df["age"], errors="raise").astype("int64")
     df[settings.TARGET_COLUMN] = pd.to_numeric(df[settings.TARGET_COLUMN], errors="coerce")
+    returned = pd.to_numeric(df[settings.RETURN_TARGET_COLUMN], errors="raise")
+    invalid = returned.notna() & ~returned.isin([0, 1])
+    if invalid.any():
+        raise ValueError("is_returned values must be 0, 1, or blank.")
+    df[settings.RETURN_TARGET_COLUMN] = returned.astype("Int64")
     return json.loads(df.to_json(orient="records", date_format="iso"))
 
 

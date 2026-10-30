@@ -5,8 +5,12 @@ create table if not exists public.retail_sales (
     category_name text not null,
     payment_method text not null,
     age integer not null check (age > 0),
-    review_score double precision check (review_score between 1 and 5)
+    review_score double precision check (review_score between 1 and 5),
+    is_returned smallint check (is_returned in (0, 1))
 );
+
+alter table public.retail_sales
+    add column if not exists is_returned smallint check (is_returned in (0, 1));
 
 create table if not exists public.review_score_predictions (
     source_row bigint primary key,

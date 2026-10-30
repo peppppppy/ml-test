@@ -22,11 +22,16 @@ def build_retail_datasets(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]
     data = df.copy()
     if "source_row" not in data.columns:
         data.insert(0, "source_row", range(1, len(data) + 1))
+    if settings.RETURN_TARGET_COLUMN not in data.columns:
+        data[settings.RETURN_TARGET_COLUMN] = pd.NA
 
     data["price"] = pd.to_numeric(data["price"], errors="raise").astype(float)
     data["quantity"] = pd.to_numeric(data["quantity"], errors="raise").astype("int64")
     data["age"] = pd.to_numeric(data["age"], errors="raise").astype("int64")
     data[settings.TARGET_COLUMN] = pd.to_numeric(data[settings.TARGET_COLUMN], errors="coerce")
+    data[settings.RETURN_TARGET_COLUMN] = _parse_return_labels(
+        data[settings.RETURN_TARGET_COLUMN]
+    )
 
     training = data.loc[data[settings.TARGET_COLUMN].notna()].copy()
     inference = data.copy()
@@ -65,7 +70,14 @@ def import_retail_data() -> int:
 
     data = pd.read_csv(source_path)
     data.insert(0, "source_row", range(1, len(data) + 1))
-    columns = ["source_row", *settings.FEATURE_COLUMNS, settings.TARGET_COLUMN]
+    if settings.RETURN_TARGET_COLUMN not in data.columns:
+        data[settings.RETURN_TARGET_COLUMN] = pd.NA
+    columns = [
+        "source_row",
+        *settings.FEATURE_COLUMNS,
+        settings.TARGET_COLUMN,
+        settings.RETURN_TARGET_COLUMN,
+    ]
     typed_data = data.loc[:, columns].copy()
     typed_data["price"] = pd.to_numeric(typed_data["price"], errors="raise").astype(float)
     typed_data["quantity"] = pd.to_numeric(typed_data["quantity"], errors="raise").astype("int64")
@@ -73,9 +85,21 @@ def import_retail_data() -> int:
     typed_data[settings.TARGET_COLUMN] = pd.to_numeric(
         typed_data[settings.TARGET_COLUMN], errors="coerce"
     )
+    typed_data[settings.RETURN_TARGET_COLUMN] = _parse_return_labels(
+        typed_data[settings.RETURN_TARGET_COLUMN]
+    )
     rows = json.loads(typed_data.to_json(orient="records"))
     database.save_retail_sales(rows)
     return len(rows)
+
+
+def _parse_return_labels(labels: pd.Series) -> pd.Series:
+    """Validate supplied return outcomes while preserving unlabeled rows."""
+    parsed = pd.to_numeric(labels, errors="raise")
+    invalid = parsed.notna() & ~parsed.isin([0, 1])
+    if invalid.any():
+        raise ValueError("is_returned values must be 0, 1, or blank.")
+    return parsed.astype("Int64")
 
 
 def main() -> None:

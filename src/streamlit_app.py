@@ -10,19 +10,14 @@ Opens at:     http://localhost:8501
 from __future__ import annotations
 
 import os
-import sys
-from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 from dotenv import load_dotenv
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
 from src import database, settings
+from src.return_risk import build_demo_return_risk_scores
 
 load_dotenv()
 
@@ -44,11 +39,15 @@ def main() -> None:
     if not database.is_supabase_configured():
         st.info("Showing the local CSV and prediction files. Configure Supabase to use hosted data.")
 
-    retail_tab, score_tab = st.tabs(["Retail data", "Review score predictions"])
+    retail_tab, score_tab, return_tab = st.tabs(
+        ["Retail data", "Review score predictions", "Return risk demo"]
+    )
     with retail_tab:
         _render_retail_data()
     with score_tab:
         _render_review_score_predictions()
+    with return_tab:
+        _render_return_risk_demo()
 
 
 def _render_retail_data() -> None:
@@ -67,6 +66,11 @@ def _render_retail_data() -> None:
     col2.metric("Units", f"{df['quantity'].sum():,.0f}")
     col3.metric("Average price", f"{df['price'].mean():,.2f}")
     col4.metric("Rated orders", f"{df['review_score'].notna().sum():,}")
+    returned_count = df[settings.RETURN_TARGET_COLUMN].notna().sum()
+    st.caption(
+        f"Observed return outcomes available: {returned_count:,} / {len(df):,}. "
+        "Blank is_returned means the outcome is unknown."
+    )
 
     left, right = st.columns(2)
     with left:
@@ -84,7 +88,18 @@ def _render_retail_data() -> None:
 
     st.subheader("Selected typed columns")
     st.dataframe(
-        df.loc[:, ["price", "quantity", "category_name", "payment_method", "age", "review_score"]],
+        df.loc[
+            :,
+            [
+                "price",
+                "quantity",
+                "category_name",
+                "payment_method",
+                "age",
+                "review_score",
+                settings.RETURN_TARGET_COLUMN,
+            ],
+        ],
         width="stretch",
     )
 
@@ -119,6 +134,67 @@ def _render_review_score_predictions() -> None:
     st.caption("Predictions are model estimates on a 1–5 scale, not confirmed customer reviews.")
     st.subheader("Review score predictions")
     st.dataframe(df, width="stretch")
+
+
+def _render_return_risk_demo() -> None:
+    st.subheader("Illustrative return-risk score")
+    st.warning(
+        "Demo only — this 0–100 score is generated from example rules. It is not a "
+        "trained model, a calibrated probability, or evidence that an order will be "
+        "returned. The available data has no actual return outcomes."
+    )
+
+    rows = database.load_retail_sales(limit=5000)
+    if not rows:
+        st.info("No retail data found to score.")
+        return
+
+    threshold = st.slider(
+        "High-risk demo-score threshold",
+        min_value=0,
+        max_value=100,
+        value=60,
+        help="This changes the demo-score band only; it is not a probability cutoff.",
+    )
+    scored = build_demo_return_risk_scores(pd.DataFrame(rows))
+    scored["demo_risk_band"] = scored["demo_return_risk_score"].ge(threshold).map(
+        {True: "High (demo)", False: "Standard (demo)"}
+    )
+    high_risk_count = int(scored["demo_return_risk_score"].ge(threshold).sum())
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Orders in demo", f"{len(scored):,}")
+    col2.metric("Average demo score", f"{scored['demo_return_risk_score'].mean():.1f} / 100")
+    col3.metric("At/above threshold", f"{high_risk_count:,}")
+
+    st.caption(
+        "Example rules are arbitrary placeholders: +25 for price ≥ 350, +20 for "
+        "quantity ≥ 4, +20 for cash on delivery, and +25 for Fashion (base score 10)."
+    )
+    if high_risk_count:
+        st.warning(
+            f"{high_risk_count:,} orders meet the selected demo-score threshold. "
+            "This is not a real return-risk alert."
+        )
+
+    display_columns = [
+        column
+        for column in (
+            "source_row",
+            "price",
+            "quantity",
+            "category_name",
+            "payment_method",
+            "demo_return_risk_score",
+            "demo_risk_band",
+        )
+        if column in scored.columns
+    ]
+    st.dataframe(
+        scored.sort_values("demo_return_risk_score", ascending=False).loc[
+            :, display_columns
+        ],
+        width="stretch",
+    )
 
 
 def _render_empty_state() -> None:

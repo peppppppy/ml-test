@@ -98,6 +98,19 @@ streamlit run src/streamlit_app.py
 The dashboard runs at http://localhost:8501. Without Supabase credentials, it
 displays the local CSV and predictions JSON.
 
+The **Return risk demo** tab displays an illustrative 0–100 rule-based score.
+It is not a trained model or a calibrated return probability: the available
+retail data has no observed return outcomes. Do not use the demo score for
+operational decisions. To build a real return model, provide an `is_returned`
+column with actual 0/1 outcomes (or a separate outcomes file joined by a stable
+order ID), then validate the model against held-out labeled data. The source
+`data/retail_sales.csv` includes a blank `is_returned` field ready for those
+outcomes; blank means unknown and must not be interpreted as a non-return.
+The app validates provided values as `0`, `1`, or blank and includes them when
+you import rows to Supabase. Run the updated `supabase/schema.sql` to add the
+nullable field to an existing Supabase table. Label-field support does not yet
+train or display a real return-probability model.
+
 ---
 
 ## Making it your own
@@ -267,10 +280,8 @@ access it through GitHub when prompted. A private source repository does not
 make the deployed app private; anyone with the app URL can open it.
 
 1. Push this project to GitHub. Community Cloud installs the dashboard's
-   dependencies from [`requirements.txt`](requirements.txt). In the app
-   creation form's **Advanced settings**, select Python 3.12; Community Cloud
-   may default to a newer Python version that is incompatible with the pinned
-   PyArrow release.
+   dependencies from [`requirements.txt`](requirements.txt) and uses Python
+   3.12 as specified by [`.python-version`](.python-version).
 2. Sign in at [share.streamlit.io](https://share.streamlit.io).
 3. Click **New app** and fill in:
    - **Repository** — your repo
